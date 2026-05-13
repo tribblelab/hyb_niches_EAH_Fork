@@ -396,6 +396,12 @@ enoughobs = filter(row -> row.rows_missing_coords + row.after_locality_filt >= 1
 CSV.write("data/occurrence_data/ranked_togeoref.csv", enoughobs)
 ```
 
+## prepare geolocate formatted files
+
+```{julia}
+prepare_geolocate_files()
+```
+
 ## visualize occurrences before & after filtering
 
 ```{julia}

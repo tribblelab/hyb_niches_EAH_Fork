@@ -306,3 +306,82 @@ function plot_species(taxa::String;
     println("Plot displayed for: $taxa")
     return nothing
 end
+
+"""
+    prepare_geolocate_files(;
+        input_dir  = "data/occurrence_data/pt_occs_to_georeference",
+        output_dir = "data/occurrence_data/pt_occs_to_georeference_geolocate_format")
+ 
+Read every CSV in `input_dir`, reformat columns to GEOLocate batch input
+format, and write the result to `output_dir` (same filename).
+ 
+Expected input columns: locality, country, stateProvince, county, latitude,
+longitude, ID, scientificName, basisOfRecord.
+ 
+Output columns (GEOLocate format): "locality string", country, state, county,
+latitude, longitude, "correction status", precision, "error polygon",
+"multiple results", ID, name, basis.
+"""
+function prepare_geolocate_files(;
+    input_dir  = "data/occurrence_data/pt_occs_to_georeference",
+    output_dir = "data/occurrence_data/pt_occs_to_georeference_geolocate_format"
+)
+    isdir(output_dir) || mkpath(output_dir)
+ 
+    files = DataFrames.filter(f -> endswith(f, ".csv"), readdir(input_dir))
+ 
+    if isempty(files)
+        println("No CSV files found in $input_dir")
+        return 0
+    end
+ 
+    converted_count = 0
+ 
+    for (idx, file) in enumerate(files)
+        println("Processing $idx/$(length(files)): $file")
+ 
+        input_file  = joinpath(input_dir,  file)
+        output_file = joinpath(output_dir, file)
+ 
+        @rput input_file output_file
+ 
+        R"""
+        rawdf_GeoRef <- read.csv(input_file)
+ 
+        if (nrow(rawdf_GeoRef) == 0) {
+            cat("  Skipping - empty file\n")
+            next
+        }
+ 
+        rawdf_GeoRef <- rawdf_GeoRef %>%
+            dplyr::select("locality string" = locality,
+                          country,
+                          state = stateProvince,
+                          county,
+                          latitude,
+                          longitude,
+                          ID,
+                          name = scientificName,
+                          basis = basisOfRecord)
+ 
+        rawdf_GeoRef$'correction status' <- ""
+        rawdf_GeoRef$precision           <- ""
+        rawdf_GeoRef$'error polygon'     <- ""
+        rawdf_GeoRef$'multiple results'  <- ""
+ 
+        rawdf_GeoRef2 <- rawdf_GeoRef[, c("locality string", "country",
+                                           "state", "county", "latitude",
+                                           "longitude", "correction status",
+                                           "precision", "error polygon",
+                                           "multiple results", "ID",
+                                           "name", "basis")]
+ 
+        write.csv(rawdf_GeoRef2, output_file, row.names = FALSE)
+        """
+ 
+        converted_count += 1
+    end
+ 
+    println("\nDone. Converted $converted_count files → $output_dir")
+    return converted_count
+end
