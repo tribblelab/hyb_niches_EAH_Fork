@@ -188,9 +188,12 @@ end
 # Remove rows outside the specified lat/lon bounding box.
 # All bounds are optional — specify only the axes you want to constrain.
 # Points with missing coordinates are dropped when a bound is supplied for that axis.
+# Always plots a preview map (green = kept, red × = removed).
+# Set save=true to write the filtered result back to the file.
 function filter_coords(taxon::String;
     lat_min=nothing, lat_max=nothing,
-    lon_min=nothing, lon_max=nothing)
+    lon_min=nothing, lon_max=nothing,
+    save::Bool=false)
 
     if all(isnothing, (lat_min, lat_max, lon_min, lon_max))
         error("At least one of lat_min, lat_max, lon_min, lon_max must be specified")
@@ -198,7 +201,6 @@ function filter_coords(taxon::String;
 
     path = resolve_taxon_path(taxon)
     df = DataFrame(CSV.File(path))
-    n_before = nrow(df)
 
     # Build a row-wise keep predicate
     function keep(row)
@@ -217,10 +219,55 @@ function filter_coords(taxon::String;
         return true
     end
 
-    filter!(keep, df)
-    n_after = nrow(df)
-    println("  Removed $(n_before - n_after) rows outside bounds ($(n_after) remaining)")
-    CSV.write(path, df)
+    keep_mask = [keep(row) for row in eachrow(df)]
+    kept_df = df[keep_mask, :]
+    removed_df = df[.!keep_mask, :]
+    n_kept = nrow(kept_df)
+    n_removed = nrow(removed_df)
+
+    println("  Preview: $n_removed point(s) will be removed, $n_kept will be kept")
+
+    # Plot preview: green = kept, red × = removed
+    taxon_label = taxon
+    kept_lat = Vector{Union{Missing,Float64}}(kept_df.latitude)
+    kept_lon = Vector{Union{Missing,Float64}}(kept_df.longitude)
+    removed_lat = Vector{Union{Missing,Float64}}(removed_df.latitude)
+    removed_lon = Vector{Union{Missing,Float64}}(removed_df.longitude)
+    @rput taxon_label kept_lat kept_lon removed_lat removed_lon
+    R"""
+    kept_pts    <- data.frame(latitude  = as.numeric(kept_lat),
+                              longitude = as.numeric(kept_lon))
+    removed_pts <- data.frame(latitude  = as.numeric(removed_lat),
+                              longitude = as.numeric(removed_lon))
+    all_lat <- c(kept_pts$latitude,  removed_pts$latitude)
+    all_lon <- c(kept_pts$longitude, removed_pts$longitude)
+    world    <- annotation_borders(database="world", colour="gray80", fill="gray80")
+    borders  <- annotation_borders(database="world", colour="gray40", fill=NA, size=0.5)
+    p <- ggplot() + world + borders +
+        geom_point(data=kept_pts,
+                   aes(x=longitude, y=latitude),
+                   color="darkgreen", size=2, alpha=0.7) +
+        { if (nrow(removed_pts) > 0)
+              geom_point(data=removed_pts,
+                         aes(x=longitude, y=latitude),
+                         color="red", shape=4, size=3.5, stroke=1.2, alpha=0.9)
+          else NULL } +
+        coord_sf(xlim=c(min(all_lon, na.rm=TRUE)-2, max(all_lon, na.rm=TRUE)+2),
+                 ylim=c(min(all_lat, na.rm=TRUE)-2, max(all_lat, na.rm=TRUE)+2)) +
+        labs(title=paste0(taxon_label, "  —  green: kept (", nrow(kept_pts),
+                          ")   red ×: removed (", nrow(removed_pts), ")"),
+             x="Longitude", y="Latitude") +
+        theme_minimal() +
+        theme(plot.title=element_text(size=10))
+    print(p)
+    """
+
+    if save
+        CSV.write(path, kept_df)
+        println("  Written: $path")
+    else
+        println("  Preview only — re-run with save=true to apply.")
+    end
 end
 ```
 
@@ -265,8 +312,31 @@ filter_countries("Calceolaria cana", ["Mexico"])
 - vaccinioides - remove spurious ~-7ºS point (too far north)
 
 ```{julia}
-filter_coords("Calceolaria vaccinioides", lat_max=-10.0)
-plot_species("Calceolaria vaccinioides")
+filter_coords("Calceolaria vaccinioides", lat_max=-10.0, save=true)
+```
+
+- barbata - remove -74 pt
+
+```{julia}
+filter_coords("Calceolaria barbata", lon_max=-75, save=true)
+```
+
+- bartsiifolia - remove -65 pt
+
+```{julia}
+filter_coords("Calceolaria bartsiifolia", lon_min=-72, lat_min=-20, save=true)
+```
+
+- undulata - remove one -39 point
+
+```{julia}
+filter_coords("Calceolaria undulata", lat_min=-39, save=true)
+```
+
+- revoluta: remove -9 pt
+
+```{julia}
+filter_coords("Calceolaria revoluta", lat_max=-10, save=true)
 ```
 
 ## fixits
