@@ -6,19 +6,10 @@ date: "2026-05-01"
 
 # cleaning up occurrence data by taxon
 
-## load packages - julia
+## load packages
 
 ```{julia}
-using DataFrames, CSV
-```
-
-## load packages - rcall etc
-
-```{julia}
-using RCall
-R"""
-library(readxl)
-"""
+include("helper_fxns.jl")
 ```
 
 ## load in files
@@ -63,7 +54,7 @@ for (idx, taxa) in enumerate(taxa_list)
                     georef_df[!, :Viable] = map(v -> uppercase(strip(string(v))), georef_df.Viable)
                     georef_df = filter(row -> row.Viable == "TRUE", georef_df)
                     # Coerce lat/lon to Float64 (CSV may read them as strings)
-                    georef_df[!, :latitude]  = map(v -> ismissing(v) ? missing : tryparse(Float64, string(v)), georef_df.latitude)
+                    georef_df[!, :latitude] = map(v -> ismissing(v) ? missing : tryparse(Float64, string(v)), georef_df.latitude)
                     georef_df[!, :longitude] = map(v -> ismissing(v) ? missing : tryparse(Float64, string(v)), georef_df.longitude)
                     # Keep only rows with valid numeric coordinates
                     georef_df = filter(row -> !ismissing(row.latitude) && !ismissing(row.longitude), georef_df)
@@ -77,11 +68,11 @@ for (idx, taxa) in enumerate(taxa_list)
                 georef_df = nothing
             end
             break
-            
+
         end #is not empty
     end
 
-   if !isnothing(georef_df) && nrow(georef_df) > 0
+    if !isnothing(georef_df) && nrow(georef_df) > 0
         # Find the no_coords file — this is the DwC base for georef records
         no_coords_candidates = filter(
             f -> startswith(f, taxon_stem) && endswith(f, "_no_coords.csv"),
@@ -117,7 +108,7 @@ for (idx, taxa) in enumerate(taxa_list)
                     string(row.ID) => (lat=row.latitude, lon=row.longitude)
                     for row in eachrow(georef_df)
                 )
-                georef_rows[!, :latitude]  = map(row -> georef_lookup[string(row.ID)].lat, eachrow(georef_rows))
+                georef_rows[!, :latitude] = map(row -> georef_lookup[string(row.ID)].lat, eachrow(georef_rows))
                 georef_rows[!, :longitude] = map(row -> georef_lookup[string(row.ID)].lon, eachrow(georef_rows))
 
                 # Add georef notes column to both frames so vcat works
@@ -126,8 +117,8 @@ for (idx, taxa) in enumerate(taxa_list)
                     for row in eachrow(georef_df)
                 )
                 georef_rows[!, :georef_notes] = map(row -> get(notes_lookup, string(row.ID), missing), eachrow(georef_rows))
-                clean_df[!, :georef_notes] = Vector{Union{Missing, String}}(missing, nrow(clean_df))
-                
+                clean_df[!, :georef_notes] = Vector{Union{Missing,String}}(missing, nrow(clean_df))
+
                 # Combine: existing coords records + newly georeferenced records
                 combined = vcat(clean_df, georef_rows, cols=:union)
 
@@ -142,18 +133,46 @@ for (idx, taxa) in enumerate(taxa_list)
     else
         println("  No viable georeferenced points — using cleaned file as-is")
     end
-end 
+end
 ```
 
 ## set up cleaning functions
 
-notably: this function edits the clean version original file.
+notably: these functions edit the file in-place (georef_merged preferred over cleaned).
+
 ```{julia}
+# Shared helper: resolve the best available CSV path for a taxon
+function resolve_taxon_path(taxon::String)
+    clean_dir = "data/occurrence_data/pt_occs_clean"
+    taxon_stem = replace(taxon, " " => "_")
+
+    georef_candidates = filter(
+        f -> startswith(f, taxon_stem) && endswith(f, "_georef_merged.csv"),
+        readdir(clean_dir)
+    )
+    cleaned_candidates = filter(
+        f -> startswith(f, taxon_stem) && occursin("cleaned", f) && endswith(f, ".csv"),
+        readdir(clean_dir)
+    )
+
+    if !isempty(georef_candidates)
+        path = joinpath(clean_dir, first(georef_candidates))
+        println("  Using georef_merged file: $path")
+        return path
+    elseif !isempty(cleaned_candidates)
+        path = joinpath(clean_dir, first(cleaned_candidates))
+        println("  Using cleaned file (no georef_merged found): $path")
+        return path
+    else
+        error("No cleaned or georef_merged file found for taxon: $taxon")
+    end
+end
+
 function filter_countries(taxon::String, countries::Vector{String})
-    # fixit: could make this smarter and not hard code the date at the end and instead do some kind of string matching thing
-    path = "data/occurrence_data/pt_occs_clean/" * replace(taxon, " " => "_") * "-2026_04_23_cleaned.csv"
+    path = resolve_taxon_path(taxon)
     cleandf = DataFrame(CSV.File(path))
-    # check that countries are even in df
+
+    # check that at least one country is present in df
     dfcountries = cleandf.country
     if length(intersect(countries, dfcountries)) == 0
         error("no input country provided in `countries` list matches countries existing in dataframe")
@@ -163,8 +182,45 @@ function filter_countries(taxon::String, countries::Vector{String})
     for country in countries
         filter!(:country => x -> x != country, cleandf)
     end
-    # write out CSV again (replaces existing file)
     CSV.write(path, cleandf)
+end
+
+# Remove rows outside the specified lat/lon bounding box.
+# All bounds are optional — specify only the axes you want to constrain.
+# Points with missing coordinates are dropped when a bound is supplied for that axis.
+function filter_coords(taxon::String;
+    lat_min=nothing, lat_max=nothing,
+    lon_min=nothing, lon_max=nothing)
+
+    if all(isnothing, (lat_min, lat_max, lon_min, lon_max))
+        error("At least one of lat_min, lat_max, lon_min, lon_max must be specified")
+    end
+
+    path = resolve_taxon_path(taxon)
+    df = DataFrame(CSV.File(path))
+    n_before = nrow(df)
+
+    # Build a row-wise keep predicate
+    function keep(row)
+        lat = row.latitude
+        lon = row.longitude
+        if !isnothing(lat_min) || !isnothing(lat_max)
+            (ismissing(lat) || !isa(lat, Number)) && return false
+            !isnothing(lat_min) && lat < lat_min && return false
+            !isnothing(lat_max) && lat > lat_max && return false
+        end
+        if !isnothing(lon_min) || !isnothing(lon_max)
+            (ismissing(lon) || !isa(lon, Number)) && return false
+            !isnothing(lon_min) && lon < lon_min && return false
+            !isnothing(lon_max) && lon > lon_max && return false
+        end
+        return true
+    end
+
+    filter!(keep, df)
+    n_after = nrow(df)
+    println("  Removed $(n_before - n_after) rows outside bounds ($(n_after) remaining)")
+    CSV.write(path, df)
 end
 ```
 
@@ -206,6 +262,12 @@ filter_countries("Calceolaria cana", ["Mexico"])
 - umbellata - fixit: delete the -35ºS pt, it comes from GenBank.
 - angustiflora - matching Molau, if not missing some in southern Peru.
 - chrysophaera - two points in Bolivia, which doesn't agree with Molau. but those two were det. by Puppo, who I trust.
+- vaccinioides - remove spurious ~-7ºS point (too far north)
+
+```{julia}
+filter_coords("Calceolaria vaccinioides", lat_max=-10.0)
+plot_species("Calceolaria vaccinioides")
+```
 
 ## fixits
 
@@ -224,6 +286,5 @@ there's 13 of these, we'll need to be extra careful and double check:
   - remove human obs? do something with trusted iNat observers?
     - trusted iNat obs: `aacocucci` , `aliciasersic`
     - "safe" taxa: "uniflora or triandra, or taxa that are invasive like tripartita. Others that you could keep maybe are purpurea, cana, hyssopifolia, fotherghillii, boliviana, lanigera, tenella, scapiflora, martinessi, glacialis, nitida, picta"
-  - filter using native range botanical country polygons +/- some buffer?
 - get summary stats for cultivated vs. inat vs. etc
 - after georeferencing, figure out reporting back to herbaria?

@@ -8,6 +8,7 @@ library(sf)
 library(ggspatial)
 library(gridExtra)
 library(CoordinateCleaner)
+library(readxl)
 library(dplyr) #needs to be loaded in last, so it defaults to correct `filter` fxn
 """
 
@@ -76,7 +77,7 @@ function load_georef_df(taxa_filename::String, georef_dir::String)
             df[!, :Viable] = map(v -> uppercase(strip(string(v))), df.Viable)
             filter!(row -> row.Viable == "TRUE", df)
 
-            df[!, :latitude]  = map(v -> ismissing(v) ? missing : tryparse(Float64, string(v)), df.latitude)
+            df[!, :latitude] = map(v -> ismissing(v) ? missing : tryparse(Float64, string(v)), df.latitude)
             df[!, :longitude] = map(v -> ismissing(v) ? missing : tryparse(Float64, string(v)), df.longitude)
             filter!(row -> !ismissing(row.latitude) && !ismissing(row.longitude), df)
 
@@ -89,6 +90,32 @@ function load_georef_df(taxa_filename::String, georef_dir::String)
         end
     end
     return nothing
+end
+
+"""
+    resolve_clean_file(filename, clean_dir) -> String
+
+Return the best available cleaned CSV path for a taxon in `clean_dir`:
+prefers `*_georef_merged.csv`, falls back to any `*_cleaned.csv`.
+Returns an empty string if nothing is found.
+"""
+function resolve_clean_file(filename::String, clean_dir::String)
+    taxon_stem = replace(filename, r"-\d{4}_\d{2}.*$" => "")
+    georef_candidates = filter(
+        f -> startswith(f, taxon_stem) && endswith(f, "_georef_merged.csv"),
+        readdir(clean_dir)
+    )
+    cleaned_candidates = filter(
+        f -> startswith(f, taxon_stem) && occursin("cleaned", f) && endswith(f, ".csv"),
+        readdir(clean_dir)
+    )
+    if !isempty(georef_candidates)
+        return joinpath(clean_dir, first(georef_candidates))
+    elseif !isempty(cleaned_candidates)
+        return joinpath(clean_dir, first(cleaned_candidates))
+    else
+        return ""
+    end
 end
 
 """
@@ -200,13 +227,13 @@ for each, and write all pages to `pdf_file`.  Returns the number of taxa
 successfully plotted.
 """
 function plot_all_occurrence_maps(;
-    traits_path    = "data/taxonomy_trait_data/traits_species_cleaned-2026_02_25.csv",
-    raw_dir        = "data/occurrence_data/pt_occs_raw",
-    clean_dir      = "data/occurrence_data/pt_occs_clean",
-    georef_dir     = "data/occurrence_data/pt_occs_georeferenced",
-    shapefile_path = "data/occurrence_data/bot_country_shapefiles/level3.shp",
-    pdf_file       = "data/occurrence_data/occurrence_maps_before_after.pdf",
-    date_suffix    = "2026_04_23"
+    traits_path="data/taxonomy_trait_data/traits_species_cleaned-2026_02_25.csv",
+    raw_dir="data/occurrence_data/pt_occs_raw",
+    clean_dir="data/occurrence_data/pt_occs_clean",
+    georef_dir="data/occurrence_data/pt_occs_georeferenced",
+    shapefile_path="data/occurrence_data/bot_country_shapefiles/level3.shp",
+    pdf_file="data/occurrence_data/occurrence_maps_before_after.pdf",
+    date_suffix="2026_04_23"
 )
     taxa_traits, taxa_to_nativerange_dict = load_taxa_data(traits_path)
     load_bot_regions(shapefile_path)
@@ -219,11 +246,11 @@ function plot_all_occurrence_maps(;
     for (idx, taxa) in enumerate(taxa_traits.scientificName)
         println("Processing $idx/$(length(taxa_traits.scientificName)): $taxa")
 
-        filename  = replace(taxa, " " => "_")
-        raw_file  = joinpath(raw_dir,   "$(filename)-$(date_suffix).csv")
-        clean_file = joinpath(clean_dir, "$(filename)-$(date_suffix)_cleaned.csv")
+        filename = replace(taxa, " " => "_")
+        raw_file = joinpath(raw_dir, "$(filename)-$(date_suffix).csv")
+        clean_file = resolve_clean_file(filename, clean_dir)
 
-        if !isfile(raw_file) || !isfile(clean_file)
+        if !isfile(raw_file) || isempty(clean_file)
             println("  Skipping - files not found")
             continue
         end
@@ -239,7 +266,7 @@ function plot_all_occurrence_maps(;
             continue
         end
 
-        georef_df    = load_georef_df(filename, georef_dir)
+        georef_df = load_georef_df(filename, georef_dir)
         country_codes = get(taxa_to_nativerange_dict, taxa, String[])
 
         push_species_to_r(taxa, raw_file, clean_file, country_codes, georef_df)
@@ -271,22 +298,22 @@ plot_species("Calceolaria alba")
 ```
 """
 function plot_species(taxa::String;
-    traits_path    = "data/taxonomy_trait_data/traits_species_cleaned-2026_02_25.csv",
-    raw_dir        = "data/occurrence_data/pt_occs_raw",
-    clean_dir      = "data/occurrence_data/pt_occs_clean",
-    georef_dir     = "data/occurrence_data/pt_occs_georeferenced",
-    shapefile_path = "data/occurrence_data/bot_country_shapefiles/level3.shp",
-    date_suffix    = "2026_04_23"
+    traits_path="data/taxonomy_trait_data/traits_species_cleaned-2026_02_25.csv",
+    raw_dir="data/occurrence_data/pt_occs_raw",
+    clean_dir="data/occurrence_data/pt_occs_clean",
+    georef_dir="data/occurrence_data/pt_occs_georeferenced",
+    shapefile_path="data/occurrence_data/bot_country_shapefiles/level3.shp",
+    date_suffix="2026_04_23"
 )
     _, taxa_to_nativerange_dict = load_taxa_data(traits_path)
     load_bot_regions(shapefile_path)
 
-    filename   = replace(taxa, " " => "_")
-    raw_file   = joinpath(raw_dir,   "$(filename)-$(date_suffix).csv")
-    clean_file  = joinpath(clean_dir, "$(filename)-$(date_suffix)_cleaned.csv")
+    filename = replace(taxa, " " => "_")
+    raw_file = joinpath(raw_dir, "$(filename)-$(date_suffix).csv")
+    clean_file = resolve_clean_file(filename, clean_dir)
 
-    isfile(raw_file)   || error("Raw file not found: $raw_file")
-    isfile(clean_file) || error("Cleaned file not found: $clean_file")
+    isfile(raw_file) || error("Raw file not found: $raw_file")
+    isempty(clean_file) && error("No cleaned or georef_merged file found for: $taxa")
 
     raw_df = filter(
         row -> !ismissing(row.latitude) && !ismissing(row.longitude),
@@ -294,10 +321,10 @@ function plot_species(taxa::String;
     )
     clean_df = DataFrame(CSV.File(clean_file))
 
-    nrow(raw_df)   > 0 || error("No valid coordinates in raw file for $taxa")
+    nrow(raw_df) > 0 || error("No valid coordinates in raw file for $taxa")
     nrow(clean_df) > 0 || error("No rows in cleaned file for $taxa")
 
-    georef_df     = load_georef_df(filename, georef_dir)
+    georef_df = load_georef_df(filename, georef_dir)
     country_codes = get(taxa_to_nativerange_dict, taxa, String[])
 
     push_species_to_r(taxa, raw_file, clean_file, country_codes, georef_df)
@@ -323,36 +350,36 @@ latitude, longitude, "correction status", precision, "error polygon",
 "multiple results", ID, name, basis.
 """
 function prepare_geolocate_files(;
-    input_dir  = "data/occurrence_data/pt_occs_to_georeference",
-    output_dir = "data/occurrence_data/pt_occs_to_georeference_geolocate_format"
+    input_dir="data/occurrence_data/pt_occs_to_georeference",
+    output_dir="data/occurrence_data/pt_occs_to_georeference_geolocate_format"
 )
     isdir(output_dir) || mkpath(output_dir)
- 
+
     files = DataFrames.filter(f -> endswith(f, ".csv"), readdir(input_dir))
- 
+
     if isempty(files)
         println("No CSV files found in $input_dir")
         return 0
     end
- 
+
     converted_count = 0
- 
+
     for (idx, file) in enumerate(files)
         println("Processing $idx/$(length(files)): $file")
- 
-        input_file  = joinpath(input_dir,  file)
+
+        input_file = joinpath(input_dir, file)
         output_file = joinpath(output_dir, file)
- 
+
         @rput input_file output_file
- 
+
         R"""
         rawdf_GeoRef <- read.csv(input_file)
- 
+
         if (nrow(rawdf_GeoRef) == 0) {
             cat("  Skipping - empty file\n")
             next
         }
- 
+
         rawdf_GeoRef <- rawdf_GeoRef %>%
             dplyr::select("locality string" = locality,
                           country,
@@ -363,25 +390,25 @@ function prepare_geolocate_files(;
                           ID,
                           name = scientificName,
                           basis = basisOfRecord)
- 
+
         rawdf_GeoRef$'correction status' <- ""
         rawdf_GeoRef$precision           <- ""
         rawdf_GeoRef$'error polygon'     <- ""
         rawdf_GeoRef$'multiple results'  <- ""
- 
+
         rawdf_GeoRef2 <- rawdf_GeoRef[, c("locality string", "country",
                                            "state", "county", "latitude",
                                            "longitude", "correction status",
                                            "precision", "error polygon",
                                            "multiple results", "ID",
                                            "name", "basis")]
- 
+
         write.csv(rawdf_GeoRef2, output_file, row.names = FALSE)
         """
- 
+
         converted_count += 1
     end
- 
+
     println("\nDone. Converted $converted_count files → $output_dir")
     return converted_count
 end
