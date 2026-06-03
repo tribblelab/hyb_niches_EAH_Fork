@@ -294,21 +294,89 @@ filter_countries("Calceolaria cana", ["Mexico"])
 ```
 
 - purpurea
+
+- meyeniana subsp. meyeniana - one non georeferenced point that's out of range at -31
+```{julia}
+filter_coords("Calceolaria meyeniana subsp. meyeniana", lat_max=-31, save=true)
+```
+
 - corymbosa subsp. corymbosa
 - corymbosa subsp. montana 
+
 - glandulosa subsp. glandulosa
+```{julia}
+filter_coords("Calceolaria glandulosa subsp. glandulosa", lat_max=-28, lat_min=-39.6, save=true) 
+```
+
 - crenatiflora
 - filicaulis subsp. filicaulis
 - uniflora
 - biflora
-- undulata
+
+-rupestris - -9 point out of range as described by Molau (not in Junin, Huancavelica, or Ayacucho)
+```{julia}
+filter_coords("Calceolaria rupestris", lat_max=-10, save=true)
+```
+
+- undulata - remove one -39 point
+```{julia}
+filter_coords("Calceolaria undulata", lat_min=-39, save=true) 
+```
+
 - tenella
+
+-picta - any point below -32 does not fit into range
+```{julia}
+filter_coords("Calceolaria picta", lat_min=-32, save=true)
+```
+
+-flavovirens - remove -29 point
+```{julia}
+filter_coords("Calceolaria flavovirens", lat_max=-29, save=true)
+```
+
 - hypericina
-- dentata subsp. dentata
+
+-cavanillesii - remove points below -39, outside of regions VII- IX range
+```{julia}
+filter_coords("Calceolaria cavanillesii", lat_min=-39, save=true)
+```
+
+-cypripediiflora - remove points above -12, outside of district of Puno and Cuzco as described by Molau
+```{julia}
+filter_coords("Calceolaria cypripediiflora", lat_max=-12, save=true)
+```
+
+- dentata subsp. dentata - can remove the point in Argentina
+```{julia}
+filter_coords("Calceolaria dentata subsp. dentata",lon_max=-68, save=true) 
+```
+
+-speciosa - remove -16 point
+```{julia}
+filter_coords("Calceolaria speciosa", lat_min=-16, save=true)
+```
+
+-valdiviana subsp. valdiviana - remove one -43 point
+```{julia}
+filter_coords("Calceolaria valdiviana subsp. valdiviana", lat_min=-43, save=true)
+```
+
+-linearis - remove nongeoref (-8, -74) pt
+```{julia}
+filter_coords("Calceolaria linearis", lon_max=-74.2, save=true)
+```
+
+-myriophylla - remove one nongeoref -8 pt
+```{julia}
+filter_coords("Calceolaria myriophylla", lat_max=-9, lon_min=-74, save=true)
+```
+
 - inflexa - Molau says endemic to Peru. I don't know if I believe the two Bolivian points.
 - umbellata - fixit: delete the -35ºS pt, it comes from GenBank.
 - angustiflora - matching Molau, if not missing some in southern Peru.
 - chrysophaera - two points in Bolivia, which doesn't agree with Molau. but those two were det. by Puppo, who I trust.
+
 - vaccinioides - remove spurious ~-7ºS point (too far north)
 
 ```{julia}
