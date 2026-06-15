@@ -513,6 +513,83 @@ there's 13 of these, we'll need to be extra careful and double check:
 - cleaning coords:
   - remove human obs? do something with trusted iNat observers?
     - trusted iNat obs: `aacocucci` , `aliciasersic`
+
+```{python}
+import requests, json, time
+
+headers = {"User-Agent": "calceolaria-scraper/1.0"}
+users = ["aacocucci", "aliciasersic"]
+users_str = ",".join(users)
+all_obs_dict = {}
+
+# Query 1: Observations BY these users
+# Query 2: Observations IDENTIFIED BY these users
+for role_param in ["user_id", "ident_user_id"]:
+    page = 1
+    while True:
+        r = requests.get("https://api.inaturalist.org/v1/observations",
+            headers=headers,
+            params={
+                role_param: users_str,
+                "taxon_id": 129854,      # Calceolaria genus
+                "rank": "species",       # only species-level IDs
+                "per_page": 200,
+                "page": page,
+                "order": "desc",
+                "order_by": "created_at"
+            }
+        )
+
+        if r.status_code != 200:
+            print(f"Error {r.status_code} for {role_param}: {r.text[:200]}")
+            break
+
+        data = r.json()
+        results = data.get("results", [])
+        total = data.get("total_results", 0)
+        print(f"{role_param} | page {page}: got {len(results)} of {total}")
+
+        for obs in results:
+            taxon = obs.get("taxon")
+            if not taxon:
+                continue
+            name = taxon.get("name", "")
+            
+            # ensure it's a species (has a space = genus + epithet)
+            if " " not in name:
+                continue
+            
+            obs_id = obs["id"]
+            if obs_id not in all_obs_dict:
+                all_obs_dict[obs_id] = {
+                    "obs_id": obs_id,
+                    "observer": obs["user"]["login"],
+                    "taxon_name": name,
+                    "taxon_id": taxon.get("id"),
+                    "date": str(obs.get("created_at", ""))[:10],
+                    "quality_grade": obs.get("quality_grade", "none"),
+                    "url": f"https://www.inaturalist.org/observations/{obs_id}"
+                }
+
+        if len(results) < 200 or page * 200 >= total:
+            break
+        page += 1
+        time.sleep(1)
+
+all_obs = list(all_obs_dict.values())
+
+# Save full data
+with open("calceolaria_ids.json", "w") as f:
+    json.dump(all_obs, f, indent=2)
+
+# Print summary
+print(f"\nTotal species-level Calceolaria observations: {len(all_obs)}\n")
+print(f"{'Observer':<20} {'Taxon':<40} {'Date':<12} {'Grade':<12} {'Obs ID'}")
+print("-" * 100)
+for rec in all_obs:
+    print(f"{rec['observer']:<20} {rec['taxon_name']:<40} {rec['date']:<12} {rec['quality_grade']:<12} {rec['obs_id']}")
+```
+
     - "safe" taxa: "uniflora or triandra, or taxa that are invasive like tripartita. Others that you could keep maybe are purpurea, cana, hyssopifolia, fotherghillii, boliviana, lanigera, tenella, scapiflora, martinessi, glacialis, nitida, picta"
 - get summary stats for herbarium vs. inat vs. etc
 
