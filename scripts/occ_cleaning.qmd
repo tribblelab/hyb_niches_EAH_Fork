@@ -352,9 +352,73 @@ there's 13 of these, we'll need to be extra careful and double check:
   1. occurrences of the synonym/homonym without species authority
   2. look at overlap of range between synonyms
 
+(make sure nivalis Puppo subsp. gets removed from ascendens)
+
 - cleaning coords:
   - remove human obs? do something with trusted iNat observers?
     - trusted iNat obs: `aacocucci` , `aliciasersic`
     - "safe" taxa: "uniflora or triandra, or taxa that are invasive like tripartita. Others that you could keep maybe are purpurea, cana, hyssopifolia, fotherghillii, boliviana, lanigera, tenella, scapiflora, martinessi, glacialis, nitida, picta"
-- get summary stats for cultivated vs. inat vs. etc
+- get summary stats for herbarium vs. inat vs. etc
+
+```{julia}
+# load mega df (georef_merged preferred over cleaned per taxon)
+all_occs = load_pt_occs_df()
+nrow(all_occs) #6757
+
+# total points per taxon
+n_by_taxon = combine(groupby(all_occs, :taxon), nrow => :n_total)
+sort!(n_by_taxon, :n_total)
+low_n_taxa = filter((:n_total => f -> f < 15), n_by_taxon)
+```
+
+of these that are at subsp. level that could be possibly merged/re-pulled at specific level:
+- Calceolaria_meyeniana_subsp._meyeniana (we didn't pull just meyeniana but could do that?)
+- Calceolaria_incarum_subsp._incarum (same as above)
+- Calceolaria_arachnoidea_subsp._arachnoidea (same as above)
+- Calceolaria_glandulosa_subsp._alicahuensis could be merged with Calceolaria_glandulosa_subsp._glandulosa
+- Calceolaria_flexuosa_subsp._flexuosa could be merged with Calceolaria_flexuosa_subsp._chrysocalyx
+- Calceolaria_engleriana_subsp._lutea could be merged with Calceolaria_engleriana_subsp._engleriana
+- We have 6 Calceolaria_corymbosa subsp. --> ask Anahí about divergence / consult with Ehrhart?
+
+```{julia}
+n_by_taxon_min15 = filter((:n_total => f -> f >= 15), n_by_taxon)
+filter!(row -> row[:taxon] in n_by_taxon_min15.taxon, all_occs)
+nrow(all_occs) #6579
+
+# let's combine all the different types of preserved specimen string
+replace!(all_occs.basisOfRecord, "preservedspecimen" => "PRESERVED_SPECIMEN")
+replace!(all_occs.basisOfRecord, "PreservedSpecimen" => "PRESERVED_SPECIMEN")
+replace!(all_occs.basisOfRecord, "Preserved Specimen" => "PRESERVED_SPECIMEN")
+```
+
+and now let's look at the weird kinds of observations -->
+```{julia}
+material_citations = filter(row -> row.basisOfRecord == "MATERIAL_CITATION", all_occs) # this is just one row for ascendens subsp. ascendens, and shouldn't be in this taxon anyway, it's actually a valid new taxon: nivalis subsp. lanatifolia
+material_samples = filter(row -> row.basisOfRecord == "MATERIAL_SAMPLE", all_occs) # these come from GenBank --> need to be filtered
+living_specimens = filter(row -> row.basisOfRecord == "LIVING_SPECIMEN", all_occs) # all from RBG Edinburgh
+fossils = filter(row -> row.basisOfRecord == "FOSSIL_SPECIMEN", all_occs) # these are not actually fossils --> UC Berkeley garden specimens
+
+```
+
+```{julia}
+filter!(row -> row[:basisOfRecord] != "MATERIAL_SAMPLE", all_occs)
+filter!(row -> row[:basisOfRecord] != "MATERIAL_CITATION", all_occs)
+filter!(row -> row[:basisOfRecord] != "LIVING_SPECIMEN", all_occs)
+filter!(row -> row[:basisOfRecord] != "FOSSIL_SPECIMEN", all_occs)
+
+# points by taxon × basisOfRecord
+n_by_bor = combine(groupby(all_occs, :taxon),
+    :basisOfRecord => (b -> count(==("HUMAN_OBSERVATION"), b)) => :HUMAN_OBSERVATION,
+    :basisOfRecord => (b -> count(==("PRESERVED_SPECIMEN"), b)) => :PRESERVED_SPECIMEN,
+    nrow => :total_points
+)
+
+n_by_bor
+```
+
 - after georeferencing, figure out reporting back to herbaria?
+
+```{julia}
+plot_all_occurrence_maps()
+plot_all_occurrence_maps(only_clean=true, pdf_file="data/occurrence_data/occurrence_maps.pdf")
+```

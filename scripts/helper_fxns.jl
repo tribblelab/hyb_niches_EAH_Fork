@@ -123,13 +123,13 @@ end
 
 Transfer all data needed by the R plotting block to R's environment.
 """
-function push_species_to_r(taxa, raw_file, clean_file, country_codes, georef_df)
-    @rput taxa raw_file clean_file country_codes
+function push_species_to_r(taxa, raw_file, clean_file, country_codes, georef_df, only_clean=false)
+    @rput taxa raw_file clean_file country_codes only_clean
     has_georef = !isnothing(georef_df) && nrow(georef_df) > 0
     @rput has_georef
     if has_georef
-        georef_df_plot = georef_df[!, [:latitude, :longitude]]
-        @rput georef_df_plot
+        georef_ids = string.(georef_df.ID)
+        @rput georef_ids
     end
 end
 
@@ -149,14 +149,6 @@ const RPLOT_BLOCK = """
 
     all_clean_lon <- clean_df\$longitude
     all_clean_lat <- clean_df\$latitude
-    if (has_georef) {
-        georef_df_plot\$longitude <- as.numeric(georef_df_plot\$longitude)
-        georef_df_plot\$latitude  <- as.numeric(georef_df_plot\$latitude)
-        georef_df_plot <- georef_df_plot[!is.na(georef_df_plot\$latitude) &
-                                         !is.na(georef_df_plot\$longitude), ]
-        all_clean_lon <- c(all_clean_lon, georef_df_plot\$longitude)
-        all_clean_lat <- c(all_clean_lat, georef_df_plot\$latitude)
-    }
     clean_lon_min <- min(all_clean_lon, na.rm=TRUE) - 2
     clean_lon_max <- max(all_clean_lon, na.rm=TRUE) + 2
     clean_lat_min <- min(all_clean_lat, na.rm=TRUE) - 2
@@ -182,31 +174,43 @@ const RPLOT_BLOCK = """
         theme_minimal() +
         theme(plot.title=element_text(size=10))
 
-    clean_title <- if (has_georef) {
-        paste0("Cleaned (n=", nrow(clean_df), " + ", nrow(georef_df_plot), " georef)")
-    } else {
-        paste0("Cleaned (n=", nrow(clean_df), ")")
+    clean_title <- paste0("Cleaned (n=", nrow(clean_df), ")")
+
+    clean_df\$plot_category <- "PRESERVED_SPECIMEN"
+    if ("basisOfRecord" %in% names(clean_df)) {
+        clean_df\$plot_category[clean_df\$basisOfRecord == "HUMAN_OBSERVATION"] <- "HUMAN_OBSERVATION"
     }
+    if (has_georef) {
+        is_georefed <- as.character(clean_df\$ID) %in% as.character(georef_ids)
+        clean_df\$plot_category[is_georefed & clean_df\$plot_category == "PRESERVED_SPECIMEN"] <- "PRESERVED_SPECIMEN (georeferenced)"
+    }
+    
+    plot_colors <- c("HUMAN_OBSERVATION" = "blue",
+                     "PRESERVED_SPECIMEN" = "darkgreen",
+                     "PRESERVED_SPECIMEN (georeferenced)" = "darkorange")
 
     p2 <- ggplot() +
         world + countries + underlay_layer +
-        geom_point(data=clean_df, aes(x=longitude, y=latitude),
-                   color="darkgreen", size=1.5, alpha=0.6) +
-        { if (has_georef) {
-              geom_point(data=georef_df_plot, aes(x=longitude, y=latitude),
-                         color="darkorange", shape=17, size=2, alpha=0.8)
-          } else { NULL }
-        } +
+        geom_point(data=clean_df, aes(x=longitude, y=latitude, color=plot_category),
+                   size=1.5, alpha=0.8) +
+        scale_color_manual(values=plot_colors) +
         coord_sf(xlim=c(clean_lon_min, clean_lon_max),
                  ylim=c(clean_lat_min, clean_lat_max)) +
-        labs(title=clean_title, x="Longitude", y="Latitude") +
+        labs(title=clean_title, x="Longitude", y="Latitude", color="Record Type") +
         annotation_scale(location="bl") +
         annotation_north_arrow(location="tl",
                                height=unit(0.8,"cm"), width=unit(0.8,"cm")) +
         theme_minimal() +
-        theme(plot.title=element_text(size=10))
+        theme(plot.title=element_text(size=10),
+              legend.position="bottom",
+              legend.title=element_text(size=9),
+              legend.text=element_text(size=8))
 
-    combined <- grid.arrange(p1, p2, ncol=2, top=taxa)
+    if (only_clean) {
+        combined <- grid.arrange(p2, ncol=1, top=taxa)
+    } else {
+        combined <- grid.arrange(p1, p2, ncol=2, top=taxa)
+    }
     print(combined)
 """
 
@@ -233,7 +237,9 @@ function plot_all_occurrence_maps(;
     georef_dir="data/occurrence_data/pt_occs_georeferenced",
     shapefile_path="data/occurrence_data/bot_country_shapefiles/level3.shp",
     pdf_file="data/occurrence_data/occurrence_maps_before_after.pdf",
-    date_suffix="2026_04_23"
+    date_suffix="2026_04_23",
+    only_clean=false,
+    min_points=15
 )
     taxa_traits, taxa_to_nativerange_dict = load_taxa_data(traits_path)
     load_bot_regions(shapefile_path)
@@ -266,10 +272,15 @@ function plot_all_occurrence_maps(;
             continue
         end
 
+        if nrow(clean_df) < min_points
+            println("  Skipping - fewer than $min_points points ($(nrow(clean_df)))")
+            continue
+        end
+
         georef_df = load_georef_df(filename, georef_dir)
         country_codes = get(taxa_to_nativerange_dict, taxa, String[])
 
-        push_species_to_r(taxa, raw_file, clean_file, country_codes, georef_df)
+        push_species_to_r(taxa, raw_file, clean_file, country_codes, georef_df, only_clean)
         reval(RPLOT_BLOCK)
         plotted_count += 1
     end
@@ -303,7 +314,9 @@ function plot_species(taxa::String;
     clean_dir="data/occurrence_data/pt_occs_clean",
     georef_dir="data/occurrence_data/pt_occs_georeferenced",
     shapefile_path="data/occurrence_data/bot_country_shapefiles/level3.shp",
-    date_suffix="2026_04_23"
+    date_suffix="2026_04_23",
+    only_clean=false,
+    min_points=0
 )
     _, taxa_to_nativerange_dict = load_taxa_data(traits_path)
     load_bot_regions(shapefile_path)
@@ -323,11 +336,12 @@ function plot_species(taxa::String;
 
     nrow(raw_df) > 0 || error("No valid coordinates in raw file for $taxa")
     nrow(clean_df) > 0 || error("No rows in cleaned file for $taxa")
+    nrow(clean_df) >= min_points || error("Only $(nrow(clean_df)) points in cleaned file, which is < min_points=$min_points")
 
     georef_df = load_georef_df(filename, georef_dir)
     country_codes = get(taxa_to_nativerange_dict, taxa, String[])
 
-    push_species_to_r(taxa, raw_file, clean_file, country_codes, georef_df)
+    push_species_to_r(taxa, raw_file, clean_file, country_codes, georef_df, only_clean)
     reval(RPLOT_BLOCK)
 
     println("Plot displayed for: $taxa")
@@ -411,4 +425,47 @@ function prepare_geolocate_files(;
 
     println("\nDone. Converted $converted_count files → $output_dir")
     return converted_count
+end
+
+"""
+    load_pt_occs_df(;
+        clean_dir = "data/occurrence_data/pt_occs_clean") -> DataFrame
+
+Stack all cleaned occurrence CSVs into a single DataFrame, selecting the best
+available file per taxon (`_georef_merged.csv` preferred over `_cleaned.csv`,
+via `resolve_clean_file`).  Two extra columns are prepended:
+
+    taxon       – bare taxon name (spaces → underscores, no date/suffix)
+    source_file – basename of the file that was loaded
+
+All other columns are passed through as-is.
+"""
+function load_pt_occs_df(;
+    clean_dir="data/occurrence_data/pt_occs_clean"
+)
+    # Strip both filename patterns to get the bare taxon stem
+    function taxon_stem(fname::String)::String
+        base = replace(fname, r"\.csv$" => "")
+        base = replace(base, r"_georef_merged$" => "")
+        base = replace(base, r"-\d{4}_\d{2}_\d{2}_cleaned$" => "")
+        return base
+    end
+
+    all_files = filter(f -> endswith(f, ".csv"), readdir(clean_dir))
+    taxa = sort(unique(taxon_stem.(all_files)))
+
+    chunks = DataFrame[]
+    for t in taxa
+        fpath = resolve_clean_file(t, clean_dir)
+        isempty(fpath) && continue
+
+        df = CSV.read(fpath, DataFrame; missingstring=["", "NA"])
+        insertcols!(df, 1,
+            :taxon => t,
+            :source_file => basename(fpath)
+        )
+        push!(chunks, df)
+    end
+
+    return vcat(chunks...; cols=:union)
 end
