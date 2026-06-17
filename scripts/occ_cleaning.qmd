@@ -271,6 +271,52 @@ function filter_coords(taxon::String;
 end
 ```
 
+## remove obs that aren't iNat or herbarium samples
+
+```{julia}
+# let's combine all the different types of preserved specimen string
+replace!(all_occs.basisOfRecord, "preservedspecimen" => "PRESERVED_SPECIMEN")
+replace!(all_occs.basisOfRecord, "PreservedSpecimen" => "PRESERVED_SPECIMEN")
+replace!(all_occs.basisOfRecord, "Preserved Specimen" => "PRESERVED_SPECIMEN")
+
+material_citations = filter(row -> row.basisOfRecord == "MATERIAL_CITATION", all_occs) # this is just one row for ascendens subsp. ascendens, and shouldn't be in this taxon anyway, it's actually a valid new taxon: nivalis subsp. lanatifolia
+material_samples = filter(row -> row.basisOfRecord == "MATERIAL_SAMPLE", all_occs) # these come from GenBank --> need to be filtered
+living_specimens = filter(row -> row.basisOfRecord == "LIVING_SPECIMEN", all_occs) # all from RBG Edinburgh
+fossils = filter(row -> row.basisOfRecord == "FOSSIL_SPECIMEN", all_occs) # these are not actually fossils --> UC Berkeley garden specimens
+filter!(row -> row[:basisOfRecord] != "MATERIAL_SAMPLE", all_occs)
+filter!(row -> row[:basisOfRecord] != "MATERIAL_CITATION", all_occs)
+filter!(row -> row[:basisOfRecord] != "LIVING_SPECIMEN", all_occs)
+filter!(row -> row[:basisOfRecord] != "FOSSIL_SPECIMEN", all_occs)
+```
+
+```{julia}
+# load mega df (georef_merged preferred over cleaned per taxon)
+all_occs = load_pt_occs_df()
+nrow(all_occs) #6757
+
+# total points per taxon
+n_by_taxon = combine(groupby(all_occs, :taxon), nrow => :n_total)
+sort!(n_by_taxon, :n_total)
+low_n_taxa = filter((:n_total => f -> f < 15), n_by_taxon)
+```
+
+```{julia}
+n_by_taxon_min15 = filter((:n_total => f -> f >= 15), n_by_taxon)
+filter!(row -> row[:taxon] in n_by_taxon_min15.taxon, all_occs)
+nrow(all_occs) #6433
+```
+
+```{julia}
+# points by taxon × basisOfRecord
+n_by_bor = combine(groupby(all_occs, :taxon),
+    :basisOfRecord => (b -> count(==("HUMAN_OBSERVATION"), b)) => :HUMAN_OBSERVATION,
+    :basisOfRecord => (b -> count(==("PRESERVED_SPECIMEN"), b)) => :PRESERVED_SPECIMEN,
+    nrow => :total_points
+)
+
+n_by_bor
+```
+
 ## clean up specific taxa
 
 problems observed in maps:
@@ -306,13 +352,12 @@ filter_countries("Calceolaria cana", ["Mexico"])
 filter_coords("Calceolaria purpurea", lat_max=-30, lat_min=-35, save=true)
 ```
 
-
--polyclada - remove point above -17
+- polyclada - remove point above -17
 ```{julia}
-filter_coords("Calceolaria polyclada", lat_max=-17, save = true)
+filter_coords("Calceolaria polyclada", lat_max=-17, save=true)
 ``` 
 
--teucrioides -remove point above -20
+- teucrioides -remove point above -20
 ```{julia}
 filter_coords("Calceolaria teucrioides", lat_max=-20, save=true)
 ```
@@ -327,7 +372,7 @@ filter_coords("Calceolaria meyeniana subsp. meyeniana", lat_max=-31, save=true)
 
 - glandulosa subsp. glandulosa
 ```{julia}
-filter_coords("Calceolaria glandulosa subsp. glandulosa", lat_max=-28, lat_min=-39.6, save=true) 
+filter_coords("Calceolaria glandulosa subsp. glandulosa", lat_max=-28, lat_min=-39.6, save=true)
 ```
 
 - crenatiflora - remove point above -15
@@ -352,14 +397,14 @@ filter_coords("Calceolaria uniflora", lat_max=-45, save=true)
 
 - biflora
 
--rupestris - -9 point out of range as described by Molau (not in Junin, Huancavelica, or Ayacucho)
+- rupestris - -9 point out of range as described by Molau (not in Junin, Huancavelica, or Ayacucho)
 ```{julia}
 filter_coords("Calceolaria rupestris", lat_max=-10, save=true)
 ```
 
 - undulata - remove one -39 point
 ```{julia}
-filter_coords("Calceolaria undulata", lat_min=-39, save=true) 
+filter_coords("Calceolaria undulata", lat_min=-39, save=true)
 ```
 
 - tenella - remove point above -36
@@ -367,52 +412,52 @@ filter_coords("Calceolaria undulata", lat_min=-39, save=true)
 filter_coords("Calceolaria tenella", lat_max=-36, save=true)
 ```
 
--picta - any point below -32 does not fit into range
+- picta - any point below -32 does not fit into range
 ```{julia}
 filter_coords("Calceolaria picta", lat_min=-32, save=true)
 ```
 
--flavovirens - remove -29 point
+- flavovirens - remove -29 point
 ```{julia}
 filter_coords("Calceolaria flavovirens", lat_max=-29, save=true)
 ```
 
 - hypericina - remove -45 point and -72 point thats on the coast, endemic to andes
 ```{julia}
-filter_coords("Calceolaria hypericina", lat_min=-45, lon_min=-71.3, save = true)
+filter_coords("Calceolaria hypericina", lat_min=-45, lon_min=-71.3, save=true)
 ```
 
--cavanillesii - remove points below -39, outside of regions VII- IX range
+- cavanillesii - remove points below -39, outside of regions VII- IX range
 ```{julia}
 filter_coords("Calceolaria cavanillesii", lat_min=-39, save=true)
 ```
 
--cypripediiflora - remove points above -12, outside of district of Puno and Cuzco as described by Molau
+- cypripediiflora - remove points above -12, outside of district of Puno and Cuzco as described by Molau
 ```{julia}
 filter_coords("Calceolaria cypripediiflora", lat_max=-12, save=true)
 ```
 
 - dentata subsp. dentata - can remove the point in Argentina
 ```{julia}
-filter_coords("Calceolaria dentata subsp. dentata",lon_max=-68, save=true) 
+filter_coords("Calceolaria dentata subsp. dentata", lon_max=-68, save=true)
 ```
 
--speciosa - remove -16 point
+- speciosa - remove -16 point
 ```{julia}
 filter_coords("Calceolaria speciosa", lat_min=-16, save=true)
 ```
 
--valdiviana subsp. valdiviana - remove one -43 point
+- valdiviana subsp. valdiviana - remove one -43 point
 ```{julia}
 filter_coords("Calceolaria valdiviana subsp. valdiviana", lat_min=-43, save=true)
 ```
 
--linearis - remove nongeoref (-8, -74) pt
+- linearis - remove nongeoref (-8, -74) pt
 ```{julia}
 filter_coords("Calceolaria linearis", lon_max=-74.2, save=true)
 ```
 
--myriophylla - remove one nongeoref -8 pt
+- myriophylla - remove one nongeoref -8 pt
 ```{julia}
 filter_coords("Calceolaria myriophylla", lat_max=-9, lon_min=-74, save=true)
 ```
@@ -427,15 +472,19 @@ filter_coords("Calceolaria inflexa", lon_max=-70, save=true)
 filter_coords("Calceolaria umbellata", lat_min=-35, save=true)
 ```
 
-- angustiflora - matching Molau, if not missing some in southern Peru.
+- angustiflora - remove Chilean points. 1 of the southern Peru pts included in Molau monograph.
+```{julia}
+filter_countries("Calceolaria angustiflora", ["Chile"])
+```
+
 - chrysophaera - two points in Bolivia, which doesn't agree with Molau. but those two were det. by Puppo, who I trust.
 
--paposana - remove points above -23 and below -30
+- paposana - remove points above -23 and below -30
 ```{julia}
 filter_coords("Calceolaria paposana", lat_max=-23, lat_min=-30, save=true)
 ```
 
--atahualpae subsp. atahualpae - Molau says endemic to Bolivia and southeastern Peru, remove -75 point (too far north)
+- atahualpae subsp. atahualpae - Molau says endemic to Bolivia and southeastern Peru, remove -75 point (too far north)
 ```{julia}
 filter_coords("Calceolaria atahualpae subsp. atahualpae", lon_min=-74.5, save=true)
 ```
@@ -465,54 +514,59 @@ filter_coords("Calceolaria undulata", lat_min=-39, save=true)
 filter_coords("Calceolaria revoluta", lat_max=-10, save=true)
 ```
 
--boliviana - remove -75 and -66 points, outside range of Northern Bolivia and SE Peru
+- boliviana - remove -75 and -66 points, outside range of Northern Bolivia and SE Peru
 ```{julia}
 filter_coords("Calceolaria boliviana", lon_min=-74, lon_max=-66, save=true)
 ```
 
--glacialis - remove points below -30
+- glacialis - remove points below -30
 ```{julia}
-filter_coords("Calceolaria glacialis", lat_min = -30, save=true)
+filter_coords("Calceolaria glacialis", lat_min=-30, save=true)
 ```
 
--pinifolia - remove point above -25
+- pinifolia - remove point above -25
 ```{julia}
 filter_coords("Calceolaria pinifolia", lat_max=-25, save=true)
 ```
 
--engleriana subsp. engleriana - remove -9 point, everything else looks good according to molau
+- engleriana subsp. engleriana - remove -9 point, everything else looks good according to molau
 ```{julia}
 filter_coords("Calceolaria engleriana subsp. engleriana", lat_max=-9, save=true)
 ```
 
--nudicaulis - remove point above -32
+- nudicaulis - remove point above -32
 ```{julia}
 filter_coords("Calceolaria nudicaulis", lat_max=-32.5, save=true)
 ```
 
--thyrsiflora - remove point above -30
+- thyrsiflora - remove point above -30
 ```{julia}
 filter_coords("Calceolaria thyrsiflora", lat_max=-32, save=true)
 ```
 
-## fixits
-
-- edge cases for members in my `homonyms.csv` file --> 
+- heterophylla - remove -50 pt
 ```{julia}
-homonymsa = intersect(taxa_traits.scientificName, homonyms.scientificName)
-homonymsb = intersect(taxa_traits.scientificName, homonyms.validName)
-homonyms_indataset = union(homonymsa, homonymsb)
+filter_coords("Calceolaria heterophylla", lon_max=-55, save=true)
 ```
 
-there's 13 of these, we'll need to be extra careful and double check:
-  1. occurrences of the synonym/homonym without species authority
-  2. look at overlap of range between synonyms
+- alba - remove Peru point
+```{julia}
+filter_countries("Calceolaria alba", ["Peru"])
+```
 
-(make sure nivalis Puppo subsp. gets removed from ascendens)
+- flexuosa subsp. chrysocalyx - Amazonas Peru point - annotated by Molau as "chrysocalyx Edwin", but monograph uses spec # for luteocalyx
+```{julia}
+filter_coords("Calceolaria flexuosa subsp. chrysocalyx", lat_max=-8, save=true)
+```
 
-- cleaning coords:
-  - remove human obs? do something with trusted iNat observers?
-    - trusted iNat obs: `aacocucci` , `aliciasersic`
+- germainii - remove outlier point. no digitization for the herbarium sheet, nor any good Argentinian range definition.
+```{julia}
+filter_coords("Calceolaria germainii", lon_max=-68, save=true)
+```
+
+## remove iNat obs./IDs if not from Cocucci/Sersic
+
+from Anahí: "safe" taxa: "uniflora or triandra, or taxa that are invasive like tripartita. Others that you could keep maybe are purpurea, cana, hyssopifolia, fothergillii, boliviana, lanigera, tenella, scapiflora, martinessi, glacialis, nitida, picta"
 
 ```{python}
 import requests, json, time
@@ -590,68 +644,194 @@ for rec in all_obs:
     print(f"{rec['observer']:<20} {rec['taxon_name']:<40} {rec['date']:<12} {rec['quality_grade']:<12} {rec['obs_id']}")
 ```
 
-    - "safe" taxa: "uniflora or triandra, or taxa that are invasive like tripartita. Others that you could keep maybe are purpurea, cana, hyssopifolia, fotherghillii, boliviana, lanigera, tenella, scapiflora, martinessi, glacialis, nitida, picta"
-- get summary stats for herbarium vs. inat vs. etc
-
 ```{julia}
-# load mega df (georef_merged preferred over cleaned per taxon)
-all_occs = load_pt_occs_df()
-nrow(all_occs) #6757
+# List of safe taxa based on user request
+safe_taxa = ["uniflora", "triandra", "tripartita", "purpurea", "cana", "hyssopifolia", "fothergillii", "boliviana", "lanigera", "tenella", "scapiflora", "martinessi", "glacialis", "nitida", "picta"]
 
-# total points per taxon
-n_by_taxon = combine(groupby(all_occs, :taxon), nrow => :n_total)
-sort!(n_by_taxon, :n_total)
-low_n_taxa = filter((:n_total => f -> f < 15), n_by_taxon)
+# Helper to check if a taxon is "safe"
+function is_safe_taxon(taxon::String)
+    t_lower = lowercase(taxon)
+    for s in safe_taxa
+        if occursin(s, t_lower)
+            return true
+        end
+    end
+    return false
+end
+
+# Extract safe URLs from calceolaria_ids.json using Regex
+json_text = read("scripts/calceolaria_ids.json", String)
+safe_urls = Set([m.match for m in eachmatch(r"https://www\.inaturalist\.org/observations/\d+", json_text)])
+
+clean_dir = "data/occurrence_data/pt_occs_clean"
+filtered_dir = "data/occurrence_data/pt_occs_filtered"
+
+function taxon_stem(fname::String)::String
+    base = replace(fname, r"\.csv$" => "")
+    base = replace(base, r"_georef_merged$" => "")
+    base = replace(base, r"-\d{4}_\d{2}_\d{2}_cleaned$" => "")
+    return base
+end
+
+all_files = filter(f -> endswith(f, ".csv"), readdir(clean_dir))
+taxa = sort(unique(taxon_stem.(all_files)))
+
+for t in taxa
+    fpath = resolve_clean_file(t, clean_dir)
+    isempty(fpath) && continue
+
+    df = DataFrame(CSV.File(fpath; missingstring=["", "NA"]))
+    if nrow(df) == 0
+        continue
+    end
+
+    if is_safe_taxon(t)
+        # Keep everything
+        CSV.write(joinpath(filtered_dir, basename(fpath)), df)
+    else
+        # Remove HUMAN_OBSERVATION unless their occurrenceID is in safe_urls
+        keep_mask = map(eachrow(df)) do row
+            if row.basisOfRecord == "HUMAN_OBSERVATION"
+                !ismissing(row.occurrenceID) && (row.occurrenceID in safe_urls)
+            else
+                true
+            end
+        end
+        filtered_df = df[keep_mask, :]
+        CSV.write(joinpath(filtered_dir, basename(fpath)), filtered_df)
+    end
+end
 ```
 
-of these that are at subsp. level that could be possibly merged/re-pulled at specific level:
-- Calceolaria_meyeniana_subsp._meyeniana (we didn't pull just meyeniana but could do that?)
-- Calceolaria_incarum_subsp._incarum (same as above)
-- Calceolaria_arachnoidea_subsp._arachnoidea (same as above)
-- Calceolaria_glandulosa_subsp._alicahuensis could be merged with Calceolaria_glandulosa_subsp._glandulosa
-- Calceolaria_flexuosa_subsp._flexuosa could be merged with Calceolaria_flexuosa_subsp._chrysocalyx
-- Calceolaria_engleriana_subsp._lutea could be merged with Calceolaria_engleriana_subsp._engleriana
-- We have 6 Calceolaria_corymbosa subsp. --> ask Anahí about divergence / consult with Ehrhart?
-
 ```{julia}
-n_by_taxon_min15 = filter((:n_total => f -> f >= 15), n_by_taxon)
-filter!(row -> row[:taxon] in n_by_taxon_min15.taxon, all_occs)
-nrow(all_occs) #6579
+# Compare the number of points in raw vs filtered
+clean_dir = "data/occurrence_data/pt_occs_clean"
+filtered_dir = "data/occurrence_data/pt_occs_filtered"
 
-# let's combine all the different types of preserved specimen string
-replace!(all_occs.basisOfRecord, "preservedspecimen" => "PRESERVED_SPECIMEN")
-replace!(all_occs.basisOfRecord, "PreservedSpecimen" => "PRESERVED_SPECIMEN")
-replace!(all_occs.basisOfRecord, "Preserved Specimen" => "PRESERVED_SPECIMEN")
+changed_taxa = String[]
+summary_rows = []
+
+all_files = filter(f -> endswith(f, ".csv"), readdir(clean_dir))
+
+for fname in all_files
+    clean_path = joinpath(clean_dir, fname)
+    filtered_path = joinpath(filtered_dir, fname)
+
+    if !isfile(filtered_path)
+        continue
+    end
+
+    df_clean = DataFrame(CSV.File(clean_path; missingstring=["", "NA"]))
+    df_filt = DataFrame(CSV.File(filtered_path; missingstring=["", "NA"]))
+
+    n_clean = nrow(df_clean)
+    n_filt = nrow(df_filt)
+
+    t_name = taxon_stem(fname)
+    push!(summary_rows, (taxon=t_name, original=n_clean, remaining_total=n_filt, removed=n_clean - n_filt))
+
+    if n_clean > n_filt
+        push!(changed_taxa, fname)
+    end
+end
+
+summary_df = DataFrame(summary_rows)
+CSV.write("data/occurrence_data/occ_cleaning_summary.csv", summary_df)
 ```
 
-and now let's look at the weird kinds of observations -->
 ```{julia}
-material_citations = filter(row -> row.basisOfRecord == "MATERIAL_CITATION", all_occs) # this is just one row for ascendens subsp. ascendens, and shouldn't be in this taxon anyway, it's actually a valid new taxon: nivalis subsp. lanatifolia
-material_samples = filter(row -> row.basisOfRecord == "MATERIAL_SAMPLE", all_occs) # these come from GenBank --> need to be filtered
-living_specimens = filter(row -> row.basisOfRecord == "LIVING_SPECIMEN", all_occs) # all from RBG Edinburgh
-fossils = filter(row -> row.basisOfRecord == "FOSSIL_SPECIMEN", all_occs) # these are not actually fossils --> UC Berkeley garden specimens
+# Open a single PDF device to save all the side-by-side plots
+R"pdf('data/occurrence_data/filtered_occs_comparison.pdf', width=10, height=5)"
 
+for fname in changed_taxa
+    clean_path = joinpath(clean_dir, fname)
+    filtered_path = joinpath(filtered_dir, fname)
+
+    df_clean = DataFrame(CSV.File(clean_path; missingstring=["", "NA"]))
+    df_filt = DataFrame(CSV.File(filtered_path; missingstring=["", "NA"]))
+
+    # Skip taxa that had fewer than 15 points originally
+    if nrow(df_clean) < 15
+        continue
+    end
+
+    taxon_label = taxon_stem(fname)
+
+    orig_lat = Vector{Union{Missing,Float64}}(df_clean.latitude)
+    orig_lon = Vector{Union{Missing,Float64}}(df_clean.longitude)
+
+    filt_lat = Vector{Union{Missing,Float64}}(df_filt.latitude)
+    filt_lon = Vector{Union{Missing,Float64}}(df_filt.longitude)
+
+    @rput taxon_label orig_lat orig_lon filt_lat filt_lon
+
+    R"""
+    library(ggplot2)
+    if (!requireNamespace("gridExtra", quietly = TRUE)) {
+      install.packages("gridExtra", repos="http://cran.us.r-project.org")
+    }
+    library(gridExtra)
+
+    orig_pts <- data.frame(latitude = as.numeric(orig_lat), longitude = as.numeric(orig_lon))
+    filt_pts <- data.frame(latitude = as.numeric(filt_lat), longitude = as.numeric(filt_lon))
+
+    all_lat <- orig_pts$latitude
+    all_lon <- orig_pts$longitude
+
+    world   <- annotation_borders(database="world", colour="gray80", fill="gray80")
+    borders <- annotation_borders(database="world", colour="gray40", fill=NA, linewidth=0.5)
+
+    xlims <- c(min(all_lon, na.rm=TRUE)-2, max(all_lon, na.rm=TRUE)+2)
+    ylims <- c(min(all_lat, na.rm=TRUE)-2, max(all_lat, na.rm=TRUE)+2)
+
+    p1 <- ggplot() + world + borders +
+        geom_point(data=orig_pts, aes(x=longitude, y=latitude), color="blue", size=2, alpha=0.7) +
+        coord_sf(xlim=xlims, ylim=ylims) +
+        labs(title=paste0("Original (", nrow(orig_pts), ")"), x="Longitude", y="Latitude") +
+        theme_minimal() + theme(plot.title=element_text(size=10))
+        
+    p2 <- ggplot() + world + borders +
+        geom_point(data=filt_pts, aes(x=longitude, y=latitude), color="darkgreen", size=2, alpha=0.7) +
+        coord_sf(xlim=xlims, ylim=ylims) +
+        labs(title=paste0("Filtered (", nrow(filt_pts), ")"), x="Longitude", y="Latitude") +
+        theme_minimal() + theme(plot.title=element_text(size=10))
+        
+    p_combined <- grid.arrange(p1, p2, ncol=2, top=taxon_label)
+    print(p_combined)
+    """
+end
+
+R"dev.off()"
+println("Plots saved to data/occurrence_data/filtered_occs_comparison.pdf")
 ```
-
-```{julia}
-filter!(row -> row[:basisOfRecord] != "MATERIAL_SAMPLE", all_occs)
-filter!(row -> row[:basisOfRecord] != "MATERIAL_CITATION", all_occs)
-filter!(row -> row[:basisOfRecord] != "LIVING_SPECIMEN", all_occs)
-filter!(row -> row[:basisOfRecord] != "FOSSIL_SPECIMEN", all_occs)
-
-# points by taxon × basisOfRecord
-n_by_bor = combine(groupby(all_occs, :taxon),
-    :basisOfRecord => (b -> count(==("HUMAN_OBSERVATION"), b)) => :HUMAN_OBSERVATION,
-    :basisOfRecord => (b -> count(==("PRESERVED_SPECIMEN"), b)) => :PRESERVED_SPECIMEN,
-    nrow => :total_points
-)
-
-n_by_bor
-```
-
-- after georeferencing, figure out reporting back to herbaria?
 
 ```{julia}
 plot_all_occurrence_maps()
 plot_all_occurrence_maps(only_clean=true, pdf_file="data/occurrence_data/occurrence_maps.pdf")
 ```
+
+## fixits
+
+- edge cases: not research grade, but id'ed by cocucci/sersic?
+- edge cases for members in my `homonyms.csv` file --> 
+```{julia}
+homonymsa = intersect(taxa_traits.scientificName, homonyms.scientificName)
+homonymsb = intersect(taxa_traits.scientificName, homonyms.validName)
+homonyms_indataset = union(homonymsa, homonymsb)
+```
+
+there's 13 of these, we'll need to be extra careful and double check:
+  1. occurrences of the synonym/homonym without species authority
+  2. look at overlap of range between synonyms
+(make sure nivalis Puppo subsp. gets removed from ascendens)
+
+- taxa that could be merged at infraspecific level and brought up above 15+ pts:
+    - Calceolaria_meyeniana_subsp._meyeniana (we didn't pull just meyeniana but could do that?)
+    - Calceolaria_incarum_subsp._incarum (same as above)
+    - Calceolaria_arachnoidea_subsp._arachnoidea (same as above)
+    - Calceolaria_glandulosa_subsp._alicahuensis could be merged with Calceolaria_glandulosa_subsp._glandulosa
+    - Calceolaria_flexuosa_subsp._flexuosa could be merged with Calceolaria_flexuosa_subsp._chrysocalyx
+    - Calceolaria_engleriana_subsp._lutea could be merged with Calceolaria_engleriana_subsp._engleriana
+    - We have 6 Calceolaria_corymbosa subsp. --> ask Anahí about divergence / consult with Ehrhart?
+
+- after georeferencing, figure out reporting back to herbaria?
