@@ -235,6 +235,7 @@ function plot_all_occurrence_maps(;
     raw_dir="data/occurrence_data/pt_occs_raw",
     clean_dir="data/occurrence_data/pt_occs_clean",
     georef_dir="data/occurrence_data/pt_occs_georeferenced",
+    filtered_dir="data/occurrence_data/pt_occs_filtered",
     shapefile_path="data/occurrence_data/bot_country_shapefiles/level3.shp",
     pdf_file="data/occurrence_data/occurrence_maps_before_after.pdf",
     date_suffix="2026_04_23",
@@ -259,6 +260,11 @@ function plot_all_occurrence_maps(;
         if !isfile(raw_file) || isempty(clean_file)
             println("  Skipping - files not found")
             continue
+        end
+
+        filtered_file = joinpath(filtered_dir, basename(clean_file))
+        if isfile(filtered_file)
+            clean_file = filtered_file
         end
 
         raw_df = filter(
@@ -313,6 +319,7 @@ function plot_species(taxa::String;
     raw_dir="data/occurrence_data/pt_occs_raw",
     clean_dir="data/occurrence_data/pt_occs_clean",
     georef_dir="data/occurrence_data/pt_occs_georeferenced",
+    filtered_dir="data/occurrence_data/pt_occs_filtered",
     shapefile_path="data/occurrence_data/bot_country_shapefiles/level3.shp",
     date_suffix="2026_04_23",
     only_clean=false,
@@ -327,6 +334,11 @@ function plot_species(taxa::String;
 
     isfile(raw_file) || error("Raw file not found: $raw_file")
     isempty(clean_file) && error("No cleaned or georef_merged file found for: $taxa")
+
+    filtered_file = joinpath(filtered_dir, basename(clean_file))
+    if isfile(filtered_file)
+        clean_file = filtered_file
+    end
 
     raw_df = filter(
         row -> !ismissing(row.latitude) && !ismissing(row.longitude),
