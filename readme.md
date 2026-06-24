@@ -4,6 +4,9 @@
 
 ## dependencies 
 
+### VS Code
+To run in VS Code, make sure you have the extensions "Julia", "R", and "Quarto". 
+
 ### julia
 
 to instantiate / load packages from `\hyb_niches` directory:    
