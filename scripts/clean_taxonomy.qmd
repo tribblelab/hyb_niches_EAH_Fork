@@ -18,15 +18,15 @@ using GeoIO, GeoStats
 
 I downloaded a checklist of species in Boryaceae from Kew / Plants of the World Online(POWO) on 2026_06_24 using the settings "Botanical Country", "Native and Introduced taxa", and "Summary Checklist (Names listed by taxonomic status)"
 
-Next, I creade a vector with all the synonyms from POWO
+Now, let's creade a vector with all the synonyms from POWO:
 ```{julia}
-lines = readlines("powochecklist_Boryaceae.txt")
+lines = readlines("data/taxonomy_trait_data/powochecklist_Boryaceae.txt")
 #create a vector called "syn" than contains all synonym listings
 syn_pos = findall(contains("==="), lines)
 syn = lines[syn_pos]
 ```
 
-and one with all the accepted names from POWO
+and one with all the accepted names from POWO:
 ```{julia}
 #create a vector called "acc" with all the accepted names
 acc = String[]
@@ -48,22 +48,33 @@ end
 println(acc)
 ```
 
-
+Here's a regular expression to pull the full name including the species authority.
 ```{julia}
-#pull lines starting from valid species (skipping headers)
-subset = lines[9:1110]
-#join back into a single string
-text = join(subset, "\n")
-#split on one or more empty lines
-blocks = split(text, r"\n\s*\n+")
+#define regex pattern just to pull full name including species authority
+pat = Regex(
+    "^.+?(?=,)",
+    "m"
+)
+```
+
+Let's create a vector of the accepted scientific names:
+```{julia}
+AccNames = String[]
+
+for newline in acc
+    for a in eachmatch(pat, newline)
+        push!(AccNames, "$(a.match)")
+    end
+end
+println(AccNames)
 ```
 
 
-let's initialize dictionary of valid names to synonyms for just the taxa we want:
+Let's initialize a dictionary of accepted names and synonyms:
 
 ```{julia}
 synonymdict = Dict{String, Vector{Tuple{String, Union{String, Missing}}}}()
-for name in scientificName
+for name in AccNames
     synonymdict[name] = Tuple{String, Union{String, Missing}}[]
 end
 ```
