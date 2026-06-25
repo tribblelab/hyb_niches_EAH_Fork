@@ -14,47 +14,42 @@ using JLD2
 using GeoIO, GeoStats
 ```
 
-## load in taxa list df
+## load in powo checklist
 
-We're only focusing on clade 1 (south) + 2b (central-northish), so let's filter down to that clade.
+I downloaded a checklist of species in Boryaceae from Kew / Plants of the World Online(POWO) on 2026_06_24 using the settings "Botanical Country", "Native and Introduced taxa", and "Summary Checklist (Names listed by taxonomic status)"
 
+Next, I creade a vector with all the synonyms from POWO
 ```{julia}
-taxa_traits = DataFrame(CSV.File("data/taxonomy_trait_data/SupTable4-TraitsSpecies.csv"))
-#clean up column names - change from all caps to lowercase
-rename!(lowercase, taxa_traits)
-#remove spaces
-rename!(x -> replace(x, ' ' => '_'), taxa_traits)
-filter!(:clade => x -> x == "1" || x == "2b", taxa_traits)
+lines = readlines("powochecklist_Boryaceae.txt")
+#create a vector called "syn" than contains all synonym listings
+syn_pos = findall(contains("==="), lines)
+syn = lines[syn_pos]
 ```
 
+and one with all the accepted names from POWO
 ```{julia}
-rename!(taxa_traits, Dict(:species => "scientificName"))
-scientificName = replace.(taxa_traits.scientificName, "C. " => "Calceolaria ")
-taxa_traits.scientificName = scientificName
-#make a specificEpithet col
-specificEpithet      = [split(taxa, " ")[2] for taxa in scientificName]
-#make an infraspecificEpithet col (splitting on var. or subsp.)
-infraspecificEpithet = Vector{Union{String,Missing}}()
-for taxa in scientificName
-    parts = split(taxa, " ")
-    if length(parts) >= 4
-        push!(infraspecificEpithet, parts[4])
-    else
-        push!(infraspecificEpithet, missing)
+#create a vector called "acc" with all the accepted names
+acc = String[]
+#Itterate through until we reach a Species header. Then, add everything that comes after it to a vector until we reach a Synonyms header. Do this for the entire checklist. 
+for (i,line) in enumerate(lines)
+    if contains("$line", "Species")
+        for (j,entry) in enumerate(lines[i:end])
+            if contains("$entry", "Synonyms")
+                deleteat!(acc, lastindex(acc))
+                break 
+            else 
+                push!(acc, lines[j+i])
+            end
+        end
+
     end
 end
 
-insertcols!(taxa_traits, 2, :specificEpithet => specificEpithet)
-insertcols!(taxa_traits, 3, :infraspecificEpithet => infraspecificEpithet)
+println(acc)
 ```
 
-## load in powo checklist
-
-I ran a Kew / Plants of the World Online checklist for Calceolaria species at the botanical country level
-on 2026-02-04, using native/introduced taxa.
 
 ```{julia}
-lines = readlines("data/taxonomy_trait_data/powochecklist.txt")
 #pull lines starting from valid species (skipping headers)
 subset = lines[9:1110]
 #join back into a single string
@@ -63,73 +58,6 @@ text = join(subset, "\n")
 blocks = split(text, r"\n\s*\n+")
 ```
 
-### compare names from anahí with powo valid names
-
-```{julia}
-#define regex pattern just to pull full name before species authority
-pat = Regex(
-    "^(.+?)\\s+(?=\\(|[A-Z])",
-    "m"
-)
-
-validnames = String[]
-#grab valid names and add to this vector
-for block in blocks
-    push!(validnames, strip(match(pat, block)[1]))
-end
-
-discrepancies = String[]
-for name in scientificName
-    if name ∉ validnames
-        push!(discrepancies, name)
-    end
-end
-
-discrepancies
-```
-
-### reconcile discrepancies with powo
-
-1.  "Calceolaria ascendens subsp. exigua” —> Kew says this is a synonym for "Calceolaria ascendens subsp. glandulifera"
->> This one is C. ascendens glandulifera
-we already have C. ascendens glandulifera in the df, so let's delete this line.
-
-```{julia}
-#delete this entry from df
-deleteat!(taxa_traits, findall(==("Calceolaria ascendens subsp. exigua"), taxa_traits.scientificName))
-```
-
-2.  "Calceolaria petiolaris” —> Kew says this is a synonym for “C. petioalaris"
->> You're right. This is a typo. It is C. petioalaris
-
-```{julia}
-#replace petiolaris with "petioalaris"
-replace!(taxa_traits.scientificName, "Calceolaria petiolaris" => "Calceolaria petioalaris")
-replace!(taxa_traits.specificEpithet, "petiolaris" => "petioalaris")
-```
-
-3.  "Calceolaria corymbosa subsp. montana” —> Kew says this is a synonym for "Calceolaria mollissima"
->> The right species to use here is C. corymbosa montana (mollissima is an old name)
-
-instead of changing the dataframe or dictionary, I'll just add an if statement to the synonym matching with the POWO checklist below.
-
-4.  "Calceolaria crenatifolia”  —> Kew doesn’t have anything for “crenatifolia”, but they do have “crenatiflora” accepted
->> Another typo. This is C. crenatiflora indeed.
-
-```{julia}
-#replace crenatifolia with "crenatiflora"
-replace!(taxa_traits.scientificName, "Calceolaria crenatifolia" => "Calceolaria crenatiflora")
-replace!(taxa_traits.specificEpithet, "crenatifolia" => "crenatiflora")
-```
-
-5.  "Calceolaria corymbosa subsp. santiagana” —> I think you have a typo, should be "santiagina"
->> Another typo. This is C. corymbosa santiagina (with an "i")
-
-```{julia}
-#replace santiagana with "santiagina"
-replace!(taxa_traits.scientificName, "Calceolaria corymbosa subsp. santiagana" => "Calceolaria corymbosa subsp. santiagina")
-replace!(taxa_traits.infraspecificEpithet, "santiagana" => "santiagina")
-```
 
 let's initialize dictionary of valid names to synonyms for just the taxa we want:
 
@@ -138,14 +66,6 @@ synonymdict = Dict{String, Vector{Tuple{String, Union{String, Missing}}}}()
 for name in scientificName
     synonymdict[name] = Tuple{String, Union{String, Missing}}[]
 end
-```
-
-6.  "Calceolaria dentata subsp. cummingiana” —> Kew has one m in “cumingiana” but on the internet I see 2 ms (“cummingiana”) in other sources
->> This one is C. dentata cummingiana (with two "m"s)
-
-```{julia}
-#let's manually add "dentata subsp. cumingiana" to synonyms to cover our bases
-push!(synonymdict["Calceolaria dentata subsp. cummingiana"], ("Calceolaria dentata subsp. cumingiana", "(Witasek) C.Ehrh."), ("Calceolaria dentata var. cumingiana", "(Witasek) C.Reiche"), ("Calceolaria dentata subsp. cummingiana", "(Witasek) C.Ehrh."), ("Calceolaria cumingiana", "Witasek"))
 ```
 
 ## gather my valid names vs. synonyms & their authorities
