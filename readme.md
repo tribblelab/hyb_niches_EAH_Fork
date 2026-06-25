@@ -5,7 +5,7 @@
 ## dependencies 
 
 ### VS Code
-To run in VS Code, make sure you have the extensions "Julia", "R", and "Quarto". 
+To run in VS Code, make sure you have the extensions Julia, Quarto, R, R Syntax, and Rainbow CSV.
 
 ### julia
 
