@@ -12,21 +12,23 @@ date: "2026-02-04"
 using CSV, DataFrames
 using JLD2
 using GeoIO, GeoStats
-```
 
+include("helper_fxns.jl")
+```
 ## load in powo checklist
 
 I downloaded a checklist of species in Boryaceae from Kew / Plants of the World Online(POWO) on 2026_06_24 using the settings "Botanical Country", "Native and Introduced taxa", and "Summary Checklist (Names listed by taxonomic status)"
 
-Now, let's creade a vector with all the synonyms from POWO:
+Now, let's creade a vector with all the lines with synonyms from POWO:
 ```{julia}
 lines = readlines("data/taxonomy_trait_data/powochecklist_Boryaceae.txt")
 #create a vector called "syn" than contains all synonym listings
 syn_pos = findall(contains("==="), lines)
 syn = lines[syn_pos]
+println(syn)
 ```
 
-and one with all the accepted names from POWO:
+and one with all the lines with accepted names from POWO:
 ```{julia}
 #create a vector called "acc" with all the accepted names
 acc = String[]
@@ -48,27 +50,16 @@ end
 println(acc)
 ```
 
-Here's a regular expression to pull the full name including the species authority.
+Let's create a vector of the synonyms' scientific names:
 ```{julia}
-#define regex pattern just to pull full name including species authority
-pat = Regex(
-    "^.+?(?=,)",
-    "m"
-)
+SynNames = extract_name(syn)
+println(SynNames)
 ```
-
-Let's create a vector of the accepted scientific names:
+and one of the accepted scientific names:
 ```{julia}
-AccNames = String[]
-
-for newline in acc
-    for a in eachmatch(pat, newline)
-        push!(AccNames, "$(a.match)")
-    end
-end
+AccNames = extract_name(acc)
 println(AccNames)
 ```
-
 
 Let's initialize a dictionary of accepted names and synonyms:
 
@@ -79,63 +70,31 @@ for name in AccNames
 end
 ```
 
-## gather my valid names vs. synonyms & their authorities
-
 ### get species authorities for valid names
 
-first, get the species authorities for all our valid names (each line in the `blocks` object):
+first, get the species authorities for all our valid names (each line in the `AccName` object):
 ```{julia}
 # Create authority dictionary for valid names
 authority_dict = Dict{String, String}()
 
-for block in blocks
-    first_line = split(block, "\n")[1]
-    name_match = match(pat, first_line)
+for AccName in AccNames
     
-    if name_match !== nothing
-        name = strip(name_match[1])
-        name_parts = split(name, " ")
-        epithet = length(name_parts) > 2 ? join(name_parts[2:end], " ") : name_parts[2]
-        
-        authority_match = match(Regex("\\b$(epithet)\\s+(.+?),"), first_line)
-        if authority_match !== nothing
-            authority = strip(authority_match[1])
-            authority = replace(authority, r"\s+in\s+.*$" => "")
-            authority_dict[name] = authority
-        end
-    end
-end
+    name = AccName[1:(findnext(isuppercase, AccName, 2)-2)]
+    authority = AccName[(findnext(isuppercase, AccName, 2):lastindex(AccName))]
+    authority_dict[name] = authority
+    
+ end
+ println( authority_dict)
 
-# Add speciesAuthority column to taxa_traits
-taxa_traits.speciesAuthority = [get(authority_dict, name, missing) for name in taxa_traits.scientificName]
 ```
 
-now we have `authority_dict` that takes all valid names (including those we don't have sampled)
-to their species authority, and we've updated `taxa_traits`.
+now we have `authority_dict` that takes all valid names (including those we don't have sampled) and matches them to their species authority
 
 ### parse all synonym names
 
 then, let's evaluate the synonyms section of the POWO checklist.
 we can collect all synonyms and see if there are synonymic epithets
 that also match accepted epithets (`duplicated_taxa`)
-
-```{julia}
-powosynonyms = lines[1112:end]
-synonympat = Regex("^(.+?)\\s+(?=\\(|[A-Z])")
-
-synonym_names = Set{String}()
-
-# collect ALL synonym names (even those we haven't sampled) from entire powosynonyms section
-for line in powosynonyms
-    if occursin("===", line)
-        m = match(synonympat, line)
-        if m !== nothing
-            synonym = strip(m[1])
-            push!(synonym_names, synonym)
-        end
-    end
-end
-```
 
 ### find epithets that are both accepted & synonyms
 
