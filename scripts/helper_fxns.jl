@@ -28,7 +28,25 @@ function load_taxa_data(traits_path::String)
     )
     return taxa_traits, taxa_to_nativerange_dict
 end
+"""
+    extract_name(vector_of_strings_that_starts_w_a_name_from_POWO)
 
+Returns the name including the authority from a vecor of lines that start with scientific names as derived from POWO. More literally takes everything to the left of the first comma for each line. 
+"""
+function extract_name(vector_of_names::Vector)
+    pat = Regex(
+    "^.+?(?=,)",
+    "m"
+)
+
+JustNames = String[]
+for newline in vector_of_names
+    for a in eachmatch(pat, newline)
+        push!(JustNames, "$(a.match)")
+    end
+end
+return JustNames
+end
 """
     load_bot_regions(shapefile_path)
 
