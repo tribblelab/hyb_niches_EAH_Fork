@@ -31,13 +31,11 @@ end
 """
     extract_name(vector_of_strings_that_starts_w_a_name_from_POWO)
 
-Returns the name including the authority from a vecor of lines that start with scientific names as derived from POWO. More literally takes everything to the left of the first comma for each line. 
+Returns the name including the authority from a vecor of lines that start with scientific names as derived from POWO. More literally takes everything to the left of the first comma or the word "in" or the end of a line (whichever comes first) for each line. 
 """
 function extract_name(vector_of_names::Vector)
-    pat = Regex(
-    "^.+?(?=,)",
-    "m"
-)
+    pat = r"^.+?(?=,|\sin\b|$)"m
+
 
 JustNames = String[]
 for newline in vector_of_names
@@ -47,6 +45,50 @@ for newline in vector_of_names
 end
 return JustNames
 end
+
+"""
+    dict_sp_au(vector_of_strings_that_are_species_names_with_authorities)
+
+Returns a dictonary of species names paired with their authroties. 
+"""
+function dict_sp_au(vector_of_names::Vector)
+    authority_dict = Dict{String, String}()
+
+
+for newname in vector_of_names
+    #find the index of the second campital letter
+    upperTwo = findnext(isuppercase, newname, 2)
+    if isnothing(upperTwo)
+        upperTwo = lastindex(newname)
+    end
+
+    #find the index of the first opening parentheses
+    firstPar = findfirst('(', newname)
+    if isnothing(firstPar)
+        firstPar = lastindex(newname)
+    end
+    
+    #set the name to the line in AccName and keep the authority blank if there is no second capital letter and no opening parentheses
+    if upperTwo == lastindex(newname) && firstPar == lastindex(newname)
+        name = newname
+        authority = ""
+        authority_dict[name] = authority
+    
+    else
+    #otherwise set the name to the thing that comes before whichever is first, the second upercase letter or opening parentheses) 
+        name = newname[1:(min(upperTwo,firstPar)-2)]
+
+        #set the authority to whatever comes after that 
+        authority = newname[(min(upperTwo,firstPar):lastindex(newname))]
+        authority_dict[name] = authority
+    end
+    
+    end
+   return authority_dict
+ end
+
+
+
 """
     load_bot_regions(shapefile_path)
 
